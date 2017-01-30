@@ -294,7 +294,7 @@ do
         ;;
 
     --enable-ulinux)
-        if [ "`uname -s`" != "Linux" ]; then
+        if [ "`uname -s`" != "Linux" -a "`uname -s`" != "AIX" ]; then
             echo "The --enable-ulinux option is only valid on the Linux platform."
             exit 1
         fi

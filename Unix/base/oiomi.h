@@ -881,59 +881,53 @@ FILE_EVENT0(20136, trace_InvalidEngineCredentials_Impl, LOG_ERR, PAL_T("Invalid 
 #endif
 FILE_EVENT0(20137, trace_EngineCredentialsNotReceived_Impl, LOG_ERR, PAL_T("Engine credentials have not been received"))
 #if defined(CONFIG_ENABLE_DEBUG)
-#define trace_TrackerHashMapError() trace_TrackerHashMapError_Impl(__FILE__, __LINE__)
-#else
-#define trace_TrackerHashMapError() trace_TrackerHashMapError_Impl(0, 0)
-#endif
-FILE_EVENT0(20138, trace_TrackerHashMapError_Impl, LOG_ERR, PAL_T("Tracker hash map error"))
-#if defined(CONFIG_ENABLE_DEBUG)
 #define trace_ClientCredentialsNotVerified(a0) trace_ClientCredentialsNotVerified_Impl(__FILE__, __LINE__, a0)
 #else
 #define trace_ClientCredentialsNotVerified(a0) trace_ClientCredentialsNotVerified_Impl(0, 0, a0)
 #endif
-FILE_EVENT1(20139, trace_ClientCredentialsNotVerified_Impl, LOG_ERR, PAL_T("Client credentials not yet verified. Msg type = %d"), int)
+FILE_EVENT1(20138, trace_ClientCredentialsNotVerified_Impl, LOG_ERR, PAL_T("Client credentials not yet verified. Msg type = %d"), int)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_ClientCredentialsNotReceived(a0) trace_ClientCredentialsNotReceived_Impl(__FILE__, __LINE__, a0)
 #else
 #define trace_ClientCredentialsNotReceived(a0) trace_ClientCredentialsNotReceived_Impl(0, 0, a0)
 #endif
-FILE_EVENT1(20140, trace_ClientCredentialsNotReceived_Impl, LOG_ERR, PAL_T("Client credentials not yet received. Msg type = %d"), int)
+FILE_EVENT1(20139, trace_ClientCredentialsNotReceived_Impl, LOG_ERR, PAL_T("Client credentials not yet received. Msg type = %d"), int)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_FailedNewServerConnection() trace_FailedNewServerConnection_Impl(__FILE__, __LINE__)
 #else
 #define trace_FailedNewServerConnection() trace_FailedNewServerConnection_Impl(0, 0)
 #endif
-FILE_EVENT0(20141, trace_FailedNewServerConnection_Impl, LOG_ERR, PAL_T("Failed to create new server connection"))
+FILE_EVENT0(20140, trace_FailedNewServerConnection_Impl, LOG_ERR, PAL_T("Failed to create new server connection"))
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_FailedSendPamRequest() trace_FailedSendPamRequest_Impl(__FILE__, __LINE__)
 #else
 #define trace_FailedSendPamRequest() trace_FailedSendPamRequest_Impl(0, 0)
 #endif
-FILE_EVENT0(20142, trace_FailedSendPamRequest_Impl, LOG_ERR, PAL_T("Failed to send PAM auth request to server"))
+FILE_EVENT0(20141, trace_FailedSendPamRequest_Impl, LOG_ERR, PAL_T("Failed to send PAM auth request to server"))
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_ServerFailedPamFile() trace_ServerFailedPamFile_Impl(__FILE__, __LINE__)
 #else
 #define trace_ServerFailedPamFile() trace_ServerFailedPamFile_Impl(0, 0)
 #endif
-FILE_EVENT0(20143, trace_ServerFailedPamFile_Impl, LOG_ERR, PAL_T("Server failed to open PAM file"))
+FILE_EVENT0(20142, trace_ServerFailedPamFile_Impl, LOG_ERR, PAL_T("Server failed to open PAM file"))
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_InvalidInProcProvider(a0) trace_InvalidInProcProvider_Impl(__FILE__, __LINE__, scs(a0))
 #else
 #define trace_InvalidInProcProvider(a0) trace_InvalidInProcProvider_Impl(0, 0, scs(a0))
 #endif
-FILE_EVENT1(20144, trace_InvalidInProcProvider_Impl, LOG_ERR, PAL_T("InProc providers are no longer supported: (%s). Defaulting to @requestor"), const char*)
+FILE_EVENT1(20143, trace_InvalidInProcProvider_Impl, LOG_ERR, PAL_T("InProc providers are no longer supported: (%s). Defaulting to @requestor"), const char*)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_EngineAuthenticateNullHandler() trace_EngineAuthenticateNullHandler_Impl(__FILE__, __LINE__)
 #else
 #define trace_EngineAuthenticateNullHandler() trace_EngineAuthenticateNullHandler_Impl(0, 0)
 #endif
-FILE_EVENT0(20145, trace_EngineAuthenticateNullHandler_Impl, LOG_ERR, PAL_T("Engine AskServerToAuthenticate received NULL handle"))
+FILE_EVENT0(20144, trace_EngineAuthenticateNullHandler_Impl, LOG_ERR, PAL_T("Engine AskServerToAuthenticate received NULL handle"))
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_EngineAuthenticateNullCallback() trace_EngineAuthenticateNullCallback_Impl(__FILE__, __LINE__)
 #else
 #define trace_EngineAuthenticateNullCallback() trace_EngineAuthenticateNullCallback_Impl(0, 0)
 #endif
-FILE_EVENT0(20146, trace_EngineAuthenticateNullCallback_Impl, LOG_ERR, PAL_T("Engine AskServerToAuthenticate received NULL callback"))
+FILE_EVENT0(20145, trace_EngineAuthenticateNullCallback_Impl, LOG_ERR, PAL_T("Engine AskServerToAuthenticate received NULL callback"))
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace__FindSubRequest_CannotFindKey(a0, a1, a2) trace__FindSubRequest_CannotFindKey_Impl(__FILE__, __LINE__, a0, a1, a2)
 #else
@@ -2207,23 +2201,17 @@ FILE_EVENT1(30210, trace_NtlmEnvIgnored_Impl, LOG_WARNING, PAL_T("NTLM_USER_FILE
 #endif
 FILE_EVENT0(30211, trace_Http_SslCompressionNotPresent_Impl, LOG_WARNING, PAL_T("SSL Compression was disabled in the OMI configuration, but the version of SSL used by OMI does not support it."))
 #if defined(CONFIG_ENABLE_DEBUG)
-#define trace_TrackerHashMapAlreadyExists(a0, a1) trace_TrackerHashMapAlreadyExists_Impl(__FILE__, __LINE__, a0, a1)
-#else
-#define trace_TrackerHashMapAlreadyExists(a0, a1) trace_TrackerHashMapAlreadyExists_Impl(0, 0, a0, a1)
-#endif
-FILE_EVENT2(30212, trace_TrackerHashMapAlreadyExists_Impl, LOG_WARNING, PAL_T("Tracker hash map item already exists (%p, %d)"), void*, int)
-#if defined(CONFIG_ENABLE_DEBUG)
 #define trace_Selector_AddHandler_AlreadyThere(a0, a1, a2) trace_Selector_AddHandler_AlreadyThere_Impl(__FILE__, __LINE__, a0, a1, tcs(a2))
 #else
 #define trace_Selector_AddHandler_AlreadyThere(a0, a1, a2) trace_Selector_AddHandler_AlreadyThere_Impl(0, 0, a0, a1, tcs(a2))
 #endif
-FILE_EVENT3(30213, trace_Selector_AddHandler_AlreadyThere_Impl, LOG_WARNING, PAL_T("Selector_AddHandler: selector=%p, handler=%p, name=%T ALREADY REGISTERED"), Selector *, Handler *, const TChar *)
+FILE_EVENT3(30212, trace_Selector_AddHandler_AlreadyThere_Impl, LOG_WARNING, PAL_T("Selector_AddHandler: selector=%p, handler=%p, name=%T ALREADY REGISTERED"), Selector *, Handler *, const TChar *)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_Selector_RemoveHandler_NotThere(a0, a1, a2) trace_Selector_RemoveHandler_NotThere_Impl(__FILE__, __LINE__, a0, a1, tcs(a2))
 #else
 #define trace_Selector_RemoveHandler_NotThere(a0, a1, a2) trace_Selector_RemoveHandler_NotThere_Impl(0, 0, a0, a1, tcs(a2))
 #endif
-FILE_EVENT3(30214, trace_Selector_RemoveHandler_NotThere_Impl, LOG_WARNING, PAL_T("Selector_RemoveHandler: selector=%p, handler=%p, name=%T NOT REGISTERED"), Selector *, Handler *, const TChar *)
+FILE_EVENT3(30213, trace_Selector_RemoveHandler_NotThere_Impl, LOG_WARNING, PAL_T("Selector_RemoveHandler: selector=%p, handler=%p, name=%T NOT REGISTERED"), Selector *, Handler *, const TChar *)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_Agent_DisconnectedFromServer() trace_Agent_DisconnectedFromServer_Impl(__FILE__, __LINE__)
 #else
@@ -4613,47 +4601,29 @@ FILE_EVENTD2(45360, trace_EngineEstablishingSocket_Impl, LOG_DEBUG, PAL_T("Engin
 #endif
 FILE_EVENTD0(45361, trace_ServerInfoReceived_Impl, LOG_DEBUG, PAL_T("Server connection info received"))
 #if defined(CONFIG_ENABLE_DEBUG)
-#define trace_TrackerHashMapAdd(a0, a1) trace_TrackerHashMapAdd_Impl(__FILE__, __LINE__, a0, a1)
-#else
-#define trace_TrackerHashMapAdd(a0, a1) trace_TrackerHashMapAdd_Impl(0, 0, a0, a1)
-#endif
-FILE_EVENTD2(45362, trace_TrackerHashMapAdd_Impl, LOG_DEBUG, PAL_T("Tracker hash map added (%p, %d)"), void*, int)
-#if defined(CONFIG_ENABLE_DEBUG)
-#define trace_TrackerHashMapRemove(a0) trace_TrackerHashMapRemove_Impl(__FILE__, __LINE__, a0)
-#else
-#define trace_TrackerHashMapRemove(a0) trace_TrackerHashMapRemove_Impl(0, 0, a0)
-#endif
-FILE_EVENTD1(45363, trace_TrackerHashMapRemove_Impl, LOG_DEBUG, PAL_T("Tracker hash map removeded (%d)"), int)
-#if defined(CONFIG_ENABLE_DEBUG)
-#define trace_TrackerHashMapFind(a0, a1) trace_TrackerHashMapFind_Impl(__FILE__, __LINE__, a0, a1)
-#else
-#define trace_TrackerHashMapFind(a0, a1) trace_TrackerHashMapFind_Impl(0, 0, a0, a1)
-#endif
-FILE_EVENTD2(45364, trace_TrackerHashMapFind_Impl, LOG_DEBUG, PAL_T("Tracker hash map found (%p, %d)"), void*, int)
-#if defined(CONFIG_ENABLE_DEBUG)
 #define trace_ClientCredentialsVerfied(a0) trace_ClientCredentialsVerfied_Impl(__FILE__, __LINE__, a0)
 #else
 #define trace_ClientCredentialsVerfied(a0) trace_ClientCredentialsVerfied_Impl(0, 0, a0)
 #endif
-FILE_EVENTD1(45365, trace_ClientCredentialsVerfied_Impl, LOG_DEBUG, PAL_T("Engine: Client Credentials Verified (%p)"), void*)
+FILE_EVENTD1(45362, trace_ClientCredentialsVerfied_Impl, LOG_DEBUG, PAL_T("Engine: Client Credentials Verified (%p)"), void*)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_ClientCredentialsVerfied2() trace_ClientCredentialsVerfied2_Impl(__FILE__, __LINE__)
 #else
 #define trace_ClientCredentialsVerfied2() trace_ClientCredentialsVerfied2_Impl(0, 0)
 #endif
-FILE_EVENTD0(45366, trace_ClientCredentialsVerfied2_Impl, LOG_DEBUG, PAL_T("Client: Client Credentials Verified"))
+FILE_EVENTD0(45363, trace_ClientCredentialsVerfied2_Impl, LOG_DEBUG, PAL_T("Client: Client Credentials Verified"))
 #if defined(CONFIG_ENABLE_DEBUG)
-#define trace_AuthStates(a0, a1, a2) trace_AuthStates_Impl(__FILE__, __LINE__, a0, a1, a2)
+#define trace_AuthStates(a0, a1, a2, a3) trace_AuthStates_Impl(__FILE__, __LINE__, a0, a1, a2, a3)
 #else
-#define trace_AuthStates(a0, a1, a2) trace_AuthStates_Impl(0, 0, a0, a1, a2)
+#define trace_AuthStates(a0, a1, a2, a3) trace_AuthStates_Impl(0, 0, a0, a1, a2, a3)
 #endif
-FILE_EVENTD3(45367, trace_AuthStates_Impl, LOG_DEBUG, PAL_T("Handle:(%p), ClientAuthState = %d, EngineAuthState = %d"), void*, int, int)
+FILE_EVENTD4(45364, trace_AuthStates_Impl, LOG_DEBUG, PAL_T("%c: Handle:(%p), ClientAuthState = %d, EngineAuthState = %d"), char, void*, int, int)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_AskServerToAuthenticate() trace_AskServerToAuthenticate_Impl(__FILE__, __LINE__)
 #else
 #define trace_AskServerToAuthenticate() trace_AskServerToAuthenticate_Impl(0, 0)
 #endif
-FILE_EVENTD0(45368, trace_AskServerToAuthenticate_Impl, LOG_DEBUG, PAL_T("Asking Server to PAM authenticate"))
+FILE_EVENTD0(45365, trace_AskServerToAuthenticate_Impl, LOG_DEBUG, PAL_T("Asking Server to PAM authenticate"))
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_Strand_Action(a0, a1, a2) trace_Strand_Action_Impl(__FILE__, __LINE__, a0, scs(a1), scs(a2))
 #else

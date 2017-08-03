@@ -59,8 +59,6 @@ static const MI_Uint32 _MAGIC = 0xC764445E;
 static ProtocolSocket *s_permanentSocket = NULL;
 static char s_socketFile[PAL_MAX_PATH_SIZE];
 static char s_secretString[S_SECRET_STRING_LENGTH];
-static HashMap s_protocolSocketTracker;
-static Lock s_trackerLock;
 static MI_Result (*authenticateCallback)(PamCheckUserResp*);
 
 /*
@@ -73,6 +71,11 @@ STRAND_DEBUGNAME3( ProtocolConnector, PostMsg, ReadyToFinish, ConnectEvent )
 /*
 **==============================================================================
 */
+
+static char _EngineChar(ProtocolBase *protocolBase)
+{
+    return protocolBase->forwardRequests ? 'E' : ' ';
+}
 
 ProtocolSocket* _ProtocolSocket_Server_New(
     _In_        ProtocolBase *          protocolBase,
@@ -203,13 +206,23 @@ void _ProtocolSocket_Delete(
     ProtocolSocket_Release(self);
 }
 
-MI_Result _AddProtocolSocket_Handler(
+static MI_Result _AddProtocolSocket_Handler(
     Selector* self,
     ProtocolSocket* protocolSocket)
 {
     MI_Result r = MI_RESULT_OK;
     ProtocolSocket_Addref(protocolSocket);
     r = Selector_AddHandler(self, &(protocolSocket->base));
+    return r;
+}
+
+static MI_Result _RemoveProtocolSocket_Handler(
+    Selector* self,
+    ProtocolSocket* protocolSocket)
+{
+    MI_Result r = MI_RESULT_OK;
+    Atomic_Dec(&protocolSocket->refCount);
+    r = Selector_RemoveHandler(self, &(protocolSocket->base));
     return r;
 }
 
@@ -227,14 +240,8 @@ static void _ProtocolSocket_Cleanup(ProtocolSocket* handler)
     /* free outstanding messages, batch */
     if (handler->receivingBatch)
         Batch_Destroy( handler->receivingBatch );
-    if (handler->engineBatch)
-    {
-        Batch_Destroy( handler->engineBatch );
-        handler->engineBatch = NULL;
-    }
 
     handler->receivingBatch = 0;
-    handler->engineBatch = 0;
 
     if (handler->message)
     {
@@ -477,100 +484,6 @@ static StrandFT _ProtocolSocket_FT = {
     NULL,
     NULL };
 
-/**************** protocolSocketTracker-support **********************************************************/
-static size_t _ProtocolSocketTrackerTestHash(const HashBucket *b)
-{
-    TrackerBucket *bucket = (TrackerBucket*) b;
-    size_t h = 0;
-    Sock key = bucket->key;
-    h = (unsigned)key % 1024;
-    return h;
-}
-
-static int _ProtocolSocketTrackerTestEqual(const HashBucket *b1, const HashBucket *b2)
-{
-    TrackerBucket *bucket1 = (TrackerBucket*) b1;
-    TrackerBucket *bucket2 = (TrackerBucket*) b2;
-    return bucket1->key == bucket2->key;
-}
-
-static void _ProtocolSocketTrackerTestRelease(HashBucket *b)
-{
-    if (b)
-    {
-        PAL_Free(b);
-    }
-    return;
-}
-
-static MI_Result _ProtocolSocketTrackerRemoveElement(Sock s)
-{
-    TrackerBucket b;
-    int r;
-
-    b.key = s;
-
-    Lock_Acquire(&s_trackerLock);
-    r = HashMap_Remove(&s_protocolSocketTracker, (HashBucket*)&b);
-    Lock_Release(&s_trackerLock);
-
-    trace_TrackerHashMapRemove(s);
-
-    return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
-}
-
-static MI_Result _ProtocolSocketTrackerAddElement(Sock s, void *p)
-{
-    TrackerBucket *b;
-    int r;
-
-    b = (TrackerBucket*)PAL_Calloc(1, sizeof(TrackerBucket));
-    if (b == NULL)
-        return MI_RESULT_SERVER_LIMITS_EXCEEDED;
-
-    b->key = s;
-    b->value = p;
-
-    Lock_Acquire(&s_trackerLock);
-    r = HashMap_Insert(&s_protocolSocketTracker, (HashBucket*)b);
-    Lock_Release(&s_trackerLock);
-
-    if (r != 0)
-    {
-        // already exists
-        trace_TrackerHashMapAlreadyExists(p, s);
-        MI_Result res = _ProtocolSocketTrackerRemoveElement(s);
-        if (res == MI_RESULT_OK)
-        {
-            Lock_Acquire(&s_trackerLock);
-            r = HashMap_Insert(&s_protocolSocketTracker, (HashBucket*)b);
-            Lock_Release(&s_trackerLock);
-        }
-    }
-
-    trace_TrackerHashMapAdd(p, s);
-
-    return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
-}
-
-static void* _ProtocolSocketTrackerGetElement(Sock s)
-{
-    TrackerBucket b;
-    TrackerBucket *r;
-
-    b.key = s;
-
-    Lock_Acquire(&s_trackerLock);
-    r = (TrackerBucket*) HashMap_Find(&s_protocolSocketTracker, (HashBucket*)&b);
-    Lock_Release(&s_trackerLock);
-
-    if (r == NULL)
-        return NULL;
-
-    trace_TrackerHashMapFind(r->value, s);
-    return r->value;
-}
-
 /**************** Auth-support **********************************************************/
 /* remove auth file and free auth data */
 static void _FreeAuthData(
@@ -588,11 +501,13 @@ static void _FreeAuthData(
 
 /* Creates and sends authentication request message */
 static MI_Boolean _SendAuthRequest(
+    BinProtNotificationType type,
     ProtocolSocket* h,
     const char* user,
     const char* password,
     const char* fileContent,
     Sock returnSock,
+    MI_Uint64 returnHandle,
     uid_t uid,
     gid_t gid
     )
@@ -600,12 +515,13 @@ static MI_Boolean _SendAuthRequest(
     BinProtocolNotification* req;
     MI_Boolean retVal = MI_TRUE;
 
-    req = BinProtocolNotification_New(BinNotificationConnectRequest);
+    req = BinProtocolNotification_New(type);
 
     if (!req)
         return MI_FALSE;
 
     req->forwardSock = returnSock;
+    req->forwardHandle = returnHandle;
 
     if (user && *user)
     {
@@ -655,6 +571,7 @@ static MI_Boolean _SendAuthRequest(
     }
 
     BinProtocolNotification_Release(req);
+    h->message = NULL;
 
     return retVal;
 }
@@ -664,6 +581,7 @@ static MI_Boolean _SendAuthResponse(
     MI_Result result,
     const char* path,
     Sock returnSock,
+    MI_Uint64 returnHandle,
     uid_t uid,
     gid_t gid
     )
@@ -677,6 +595,7 @@ static MI_Boolean _SendAuthResponse(
         return MI_FALSE;
 
     req->forwardSock = returnSock;
+    req->forwardHandle = returnHandle;
 
     req->result = result;
     if (path && *path)
@@ -703,6 +622,7 @@ static MI_Boolean _SendAuthResponse(
     }
 
     BinProtocolNotification_Release(req);
+    h->message = NULL;
 
     return retVal;
 }
@@ -744,7 +664,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
             return MI_FALSE;
         }
 
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, 
+        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, binMsg->forwardHandle,
                                handler->authInfo.uid, handler->authInfo.gid))
             return MI_FALSE;
 
@@ -754,7 +674,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
     trace_AuthFailed_RandomDataMismatch();
 
     /* Auth failed */
-    _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, INVALID_ID, INVALID_ID);
+    _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, binMsg->forwardHandle, INVALID_ID, INVALID_ID);
     handler->clientAuthState = PRT_AUTH_FAILED;
     return MI_FALSE;
 }
@@ -788,7 +708,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         if (0 == AuthenticateUser(binMsg->user, binMsg->password) &&
             0 == LookupUser(binMsg->user, &handler->authInfo.uid, &handler->authInfo.gid))
         {
-            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock,
+            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, binMsg->forwardHandle,
                                    handler->authInfo.uid, handler->authInfo.gid))
                 return MI_FALSE;
 
@@ -801,7 +721,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         trace_AuthFailed_ForUser(scs(binMsg->user));
 
         /* Auth failed */
-        _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, INVALID_ID, INVALID_ID);
+        _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, binMsg->forwardHandle, INVALID_ID, INVALID_ID);
         handler->clientAuthState = PRT_AUTH_FAILED;
         return MI_FALSE;
     }
@@ -813,9 +733,8 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         {
             handler->authInfo.uid = binMsg->uid;
             handler->authInfo.gid = binMsg->gid;
-            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock,
-                                   binMsg->uid, binMsg->gid))
-                return MI_FALSE;
+            return _SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, binMsg->forwardHandle,
+                                     binMsg->uid, binMsg->gid);
         }
     }
     else
@@ -824,7 +743,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
            implicit auth */
         if (0 == GetUIDByConnection((int)handler->base.sock, &handler->authInfo.uid, &handler->authInfo.gid))
         {
-            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock,
+            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, binMsg->forwardHandle,
                                    handler->authInfo.uid, handler->authInfo.gid))
                 return MI_FALSE;
 
@@ -835,7 +754,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
     }
 #if defined(CONFIG_OS_WINDOWS)
     {
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, INVALID_ID, INVALID_ID))
+        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, binMsg->forwardHandle, INVALID_ID, INVALID_ID))
             return MI_FALSE;
 
         /* Ignore Auth by setting it to OK */
@@ -854,7 +773,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         if (!handler->authData)
         {
             /* Auth failed */
-            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, INVALID_ID, INVALID_ID);
+            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, binMsg->forwardHandle, INVALID_ID, INVALID_ID);
             handler->clientAuthState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
@@ -864,13 +783,13 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
             trace_CannotCreateFileForUser((int)binMsg->uid);
 
             /* Auth failed */
-            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, INVALID_ID, INVALID_ID);
+            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, binMsg->forwardHandle, INVALID_ID, INVALID_ID);
             handler->clientAuthState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
 
         /* send file name to the client */
-        if (!_SendAuthResponse(handler, MI_RESULT_IN_PROGRESS, handler->authData->path, binMsg->forwardSock, INVALID_ID, INVALID_ID))
+        if (!_SendAuthResponse(handler, MI_RESULT_IN_PROGRESS, handler->authData->path, binMsg->forwardSock, binMsg->forwardHandle, INVALID_ID, INVALID_ID))
             return MI_FALSE;
 
         /* Auth posponed */
@@ -910,13 +829,13 @@ static MI_Boolean _ProcessAuthMessage(
     binMsg = (BinProtocolNotification*) msg;
 
     /* server waiting client's first request? */
-    if (PRT_AUTH_WAIT_CONNECTION_REQUEST == handler->clientAuthState)
+    if (BinNotificationConnectRequest == binMsg->type)
     {
         return _ProcessAuthMessageWaitingConnectRequest(handler, binMsg);
     }
 
     /* server waiting for client's file's content request? */
-    if (PRT_AUTH_WAIT_CONNECTION_REQUEST_WITH_FILE_DATA == handler->clientAuthState)
+    if (BinNotificationConnectInProgress == binMsg->type)
     {
         return _ProcessAuthMessageWaitingConnectRequestFileData(handler, binMsg);
     }
@@ -963,7 +882,8 @@ static MI_Boolean _ProcessAuthMessage(
             }
 
             File_Close(is);
-            return _SendAuthRequest(handler, 0, 0, buf, binMsg->forwardSock, INVALID_ID, INVALID_ID);
+            return _SendAuthRequest(BinNotificationConnectInProgress, handler, 0, 0, buf, binMsg->forwardSock, 
+                                    binMsg->forwardHandle, INVALID_ID, INVALID_ID);
         }
         else
         {
@@ -995,6 +915,7 @@ MI_Boolean SendSocketFileRequest(
     MI_Boolean retVal = MI_TRUE;
 
     s_permanentSocket = h;
+    s_permanentSocket->clientAuthState = PRT_AUTH_OK;
 
     req = PostSocketFile_New(PostSocketFileRequest);
 
@@ -1107,8 +1028,7 @@ static MI_Boolean _ProcessEngineAuthMessage(
 static MI_Boolean _SendVerifySocketConnMsg(
     ProtocolSocket* h,
     VerifySocketConnType type,
-    const char* message,
-    Sock s)
+    const char* message)
 {
     VerifySocketConn* req;
     MI_Boolean retVal = MI_TRUE;
@@ -1117,8 +1037,6 @@ static MI_Boolean _SendVerifySocketConnMsg(
 
     if (!req)
         return MI_FALSE;
-
-    req->sock = s;
 
     if (message && *message)
     {
@@ -1254,12 +1172,10 @@ static MI_Boolean _ProcessCreateAgentMsg(
 
             if (child > 0)
             {
-                MI_Boolean r = MI_TRUE; //= _SendCreateAgentMsg(handler, CreateAgentMsgResponse, agentMsg->uid, agentMsg->gid, child);
+                MI_Boolean r = MI_TRUE;
 
-//                sleep(2);
                 trace_ServerClosingSocket(handler, handler->base.sock);
-                Selector_RemoveHandler(protocolBase->selector, &(handler->base));
-                _ProtocolSocket_Cleanup(handler);
+                _RemoveProtocolSocket_Handler(protocolBase->selector, handler);
                 Sock_Close(logfd);
                 return r;
             }
@@ -1474,7 +1390,7 @@ static MI_Boolean _ProcessVerifySocketConnMessage(
         else
         {
             trace_InvalidEngineCredentials();
-            _SendVerifySocketConnMsg(handler, VerifySocketConnShutdown, "Invalid secret string received", sockMsg->sock);
+            _SendVerifySocketConnMsg(handler, VerifySocketConnShutdown, "Invalid secret string received");
 
             _ProtocolSocket_Cleanup(handler);
         }
@@ -1484,7 +1400,6 @@ static MI_Boolean _ProcessVerifySocketConnMessage(
     /* engine waiting for closing request from server*/
     if (VerifySocketConnShutdown == sockMsg->type)
     {
-        handler->base.sock = sockMsg->sock;
         _ProtocolSocket_Cleanup(handler);
         return MI_TRUE;
     }
@@ -1659,6 +1574,70 @@ static MI_Result _CreateConnector(
     return Sock_CreateIPConnector(s, locator);
 }
 
+static Protocol_CallbackResult _EngineProcessBinaryRequests(
+    Message* msg,
+    ProtocolSocket* handler)
+{
+    BinProtocolNotification* binMsg = (BinProtocolNotification*) msg;                    
+    Protocol_CallbackResult ret = PRT_RETURN_FALSE;
+
+    if (binMsg->type == BinNotificationConnectRequest ||
+        binMsg->type == BinNotificationConnectInProgress)
+    {
+        // forward to server
+
+        uid_t uid = INVALID_ID;
+        gid_t gid = INVALID_ID;
+        Sock forwardSock = handler->base.sock;
+
+        DEBUG_ASSERT(s_socketFile != NULL);
+        DEBUG_ASSERT(s_secretString != NULL);
+
+        /* If system supports connection-based auth, use it for
+           implicit auth */
+        if (0 != GetUIDByConnection((int)handler->base.sock, &uid, &gid))
+        {
+            uid = binMsg->uid;
+            gid = binMsg->gid;
+        }
+
+
+        handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
+        s_permanentSocket->clientAuthState = PRT_AUTH_OK;
+
+        if (_SendAuthRequest(binMsg->type, s_permanentSocket, binMsg->user, binMsg->password, NULL, forwardSock, 
+                             (MI_Uint64)(uintptr_t)handler, uid, gid) )                
+        {
+            ret = PRT_CONTINUE;
+        }
+    }
+    else if (binMsg->type == BinNotificationConnectResponse)
+    {
+        // forward to client
+
+        ProtocolSocket *newHandler = (ProtocolSocket *)(uintptr_t)binMsg->forwardHandle;
+
+        if (binMsg->result == MI_RESULT_OK || binMsg->result == MI_RESULT_ACCESS_DENIED)
+        {
+            if (binMsg->result == MI_RESULT_OK)
+            {
+                newHandler->clientAuthState = PRT_AUTH_OK;
+                newHandler->authInfo.uid = binMsg->uid;
+                newHandler->authInfo.gid = binMsg->gid;
+                trace_ClientCredentialsVerfied(newHandler);
+            }
+        }
+
+        if(_SendAuthResponse(newHandler, binMsg->result, binMsg->authFile, INVALID_SOCK, 0,
+                             binMsg->uid, binMsg->gid))
+        {
+            ret = PRT_CONTINUE;
+        }
+    }
+
+    return ret;
+}
+
 /*
     Processes incoming message, including:
         - decoding message from batch
@@ -1707,7 +1686,7 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
             MessageName(msg->tag),
             msg->operationId );
 
-        trace_AuthStates(handler, handler->clientAuthState, handler->engineAuthState);
+        trace_AuthStates(_EngineChar(protocolBase), handler, handler->clientAuthState, handler->engineAuthState);
 
         if (msg->tag == PostSocketFileTag)
         {
@@ -1740,180 +1719,34 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
             trace_EngineCredentialsNotReceived();
             if (msg->tag == BinProtocolNotificationTag)
             {
-                BinProtocolNotification* binMsg = (BinProtocolNotification*) msg;
-                
-                _SendVerifySocketConnMsg(handler, VerifySocketConnShutdown, "Engine credentials not received", binMsg->forwardSock);
+                _SendVerifySocketConnMsg(handler, VerifySocketConnShutdown, "Engine credentials not received");
 
                 _ProtocolSocket_Cleanup(handler);
                 return PRT_RETURN_FALSE;
             }
         }
-        else if (PRT_AUTH_OK != handler->clientAuthState)
+        else if (msg->tag == BinProtocolNotificationTag &&
+                 ((BinProtocolNotification*)msg)->type != BinNotificationAgentIdle)
         {
-            if (msg->tag == BinProtocolNotificationTag)
+            if (protocolBase->forwardRequests == MI_TRUE)
             {
-                if (protocolBase->forwardRequests == MI_TRUE)
-                {
-                    BinProtocolNotification* binMsg = (BinProtocolNotification*) msg;                    
-                    if (binMsg->type == BinNotificationConnectRequest)
-                    {
-                        // forward to server
-
-                        uid_t uid = INVALID_ID;
-                        gid_t gid = INVALID_ID;
-                        Sock s = binMsg->forwardSock;
-                        Sock forwardSock = handler->base.sock;
-
-                        // Note that we are storing (socket, ProtocolSocket*) here
-                        r = _ProtocolSocketTrackerAddElement(forwardSock, handler);
-
-                        if(MI_RESULT_OK != r)
-                        {
-                            trace_TrackerHashMapError();
-                            return PRT_RETURN_FALSE;
-                        }
-
-                        DEBUG_ASSERT(s_socketFile != NULL);
-                        DEBUG_ASSERT(s_secretString != NULL);
-                        DEBUG_ASSERT(s == INVALID_SOCK);
-
-                        /* If system supports connection-based auth, use it for
-                           implicit auth */
-                        if (0 != GetUIDByConnection((int)handler->base.sock, &uid, &gid))
-                        {
-                            uid = binMsg->uid;
-                            gid = binMsg->gid;
-                        }
-
-                        /* Create connector socket */
-                        {
-                            if (!handler->engineBatch)
-                            {
-                                handler->engineBatch = Batch_New(BATCH_MAX_PAGES);
-                                if (!handler->engineBatch)
-                                {
-                                    return PRT_RETURN_FALSE;
-                                }
-                            }
-
-                            ProtocolSocketAndBase *newSocketAndBase = Batch_GetClear(handler->engineBatch, sizeof(ProtocolSocketAndBase));
-                            if (!newSocketAndBase)
-                            {
-                                trace_BatchAllocFailed();
-                                return PRT_RETURN_FALSE;
-                            }
-
-                            r = _ProtocolSocketAndBase_New_Server_Connection(newSocketAndBase, protocolBase->selector, NULL, &s);
-                            if( r != MI_RESULT_OK )
-                            {
-                                trace_FailedNewServerConnection();
-                                return PRT_RETURN_FALSE;
-                            }
-
-                            handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
-                            handler = &newSocketAndBase->protocolSocket;
-                            newSocketAndBase->internalProtocolBase.forwardRequests = MI_TRUE;
-
-                            // Note that we are storing (socket, ProtocolSocketAndBase*) here
-                            r = _ProtocolSocketTrackerAddElement(s, newSocketAndBase);
-
-                            if(MI_RESULT_OK != r)
-                            {
-                                trace_TrackerHashMapError();
-                                return PRT_RETURN_FALSE;
-                            }
-                        }
-
-                        handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
-                        
-                        if (_SendAuthRequest(handler, binMsg->user, binMsg->password, NULL, forwardSock, uid, gid) )                
-                        {
-                            ret = PRT_CONTINUE;
-                        }
-                    }
-                    else if (binMsg->type == BinNotificationConnectResponse)
-                    {
-                        // forward to client
-
-                        Sock s = binMsg->forwardSock;
-                        Sock forwardSock = INVALID_SOCK;
-                        ProtocolSocket *newHandler = _ProtocolSocketTrackerGetElement(s);
-                        if (newHandler == NULL)
-                        {
-                            trace_TrackerHashMapError();
-                            return PRT_RETURN_FALSE;
-                        }
-
-                        if (binMsg->result == MI_RESULT_OK || binMsg->result == MI_RESULT_ACCESS_DENIED)
-                        {
-                            if (binMsg->result == MI_RESULT_OK)
-                            {
-                                newHandler->clientAuthState = PRT_AUTH_OK;
-                                newHandler->authInfo.uid = binMsg->uid;
-                                newHandler->authInfo.gid = binMsg->gid;
-                                trace_ClientCredentialsVerfied(newHandler);
-                            }
-
-                            ProtocolSocketAndBase *socketAndBase = _ProtocolSocketTrackerGetElement(handler->base.sock);
-                            if (socketAndBase == NULL)
-                            {
-                                trace_TrackerHashMapError();
-                                return PRT_RETURN_FALSE;
-                            }
-
-                            r = _ProtocolSocketTrackerRemoveElement(handler->base.sock);
-                            if(MI_RESULT_OK != r)
-                            {
-                                trace_TrackerHashMapError();
-                                return PRT_RETURN_FALSE;
-                            }
-
-                            // close socket to server
-                            trace_EngineClosingSocket(handler, handler->base.sock);
-                            Selector_RemoveHandler(socketAndBase->internalProtocolBase.selector, 
-                                                   &(socketAndBase->protocolSocket.base));
-
-                            r = _ProtocolSocketTrackerRemoveElement(s);
-                            if(MI_RESULT_OK != r)
-                            {
-                                trace_TrackerHashMapError();
-                                return PRT_RETURN_FALSE;
-                            }
-                        }
-                        else
-                        {
-                            forwardSock = handler->base.sock;
-                        }
-
-                        handler = newHandler;
-
-                        if(_SendAuthResponse(handler, binMsg->result, binMsg->authFile, forwardSock, 
-                                             binMsg->uid, binMsg->gid))
-                        {
-                            ret = PRT_CONTINUE;
-                        }
-                    }
-                    else
-                    {
-                        trace_ClientCredentialsNotVerified(msg->tag);
-                    }
-                }
-                else
-                {
-                    if( _ProcessAuthMessage(handler, msg) )
-                        ret = PRT_CONTINUE;
-                }
+                return _EngineProcessBinaryRequests(msg, handler);
             }
             else
             {
-                if (PRT_AUTH_WAIT_CONNECTION_RESPONSE == handler->clientAuthState)
-                {
-                    trace_ClientCredentialsNotReceived(msg->tag);
-                }
-                else
-                {
-                    trace_ClientCredentialsNotVerified(msg->tag);
-                }                    
+                if( _ProcessAuthMessage(handler, msg) )
+                    ret = PRT_CONTINUE;
+            }
+        }
+        else if (PRT_AUTH_OK != handler->clientAuthState)
+        {
+            if (PRT_AUTH_WAIT_CONNECTION_RESPONSE == handler->clientAuthState)
+            {
+                trace_ClientCredentialsNotReceived(msg->tag);
+            }
+            else
+            {
+                trace_ClientCredentialsNotVerified(msg->tag);
             }
         }
         else
@@ -2620,7 +2453,7 @@ MI_Result ProtocolSocketAndBase_New_Connector(
         h->engineAuthState = PRT_AUTH_OK;
 
         /* send connect request */
-        if( !_SendAuthRequest(h, user, password, NULL, INVALID_SOCK, INVALID_ID, INVALID_ID) )
+        if( !_SendAuthRequest(BinNotificationConnectRequest, h, user, password, NULL, INVALID_SOCK, 0, INVALID_ID, INVALID_ID) )
         {
             // this will call _RequestCallback which will schedule a CloseOther,
             // but that is not going delete the object (since it is not even truly opened),
@@ -2913,9 +2746,9 @@ static MI_Result _ProtocolSocketAndBase_New_Server_Connection(
         return r;
     }
 
-    if (!_SendVerifySocketConnMsg(h, VerifySocketConnStartup, s_secretString, INVALID_SOCK))
+    if (!_SendVerifySocketConnMsg(h, VerifySocketConnStartup, s_secretString))
     {
-        Selector_RemoveHandler(selector, &h->base);
+        _RemoveProtocolSocket_Handler(selector, h);
         return MI_RESULT_FAILED;
     }
 
@@ -2951,9 +2784,8 @@ MI_Result Protocol_New_Agent_Request(
     
     if (!_SendCreateAgentMsg(&socketAndBase->protocolSocket, CreateAgentMsgRequest, uid, gid, 0))
     {
-        Selector_RemoveHandler(selector, &socketAndBase->protocolSocket.base);
-        Sock_Close(s);
-        _ProtocolSocketAndBase_Delete(socketAndBase);
+        _RemoveProtocolSocket_Handler(selector, &socketAndBase->protocolSocket);
+        _ProtocolSocket_Delete(&socketAndBase->protocolSocket);
         return MI_RESULT_FAILED;
     }
 
@@ -2988,15 +2820,4 @@ int AskServerToAuthenticate(
     }
 
     return 0;
-}
-
-MI_Result Initialize_ProtocolSocketTracker()
-{
-    /* Initialize socket tracker and lock */
-    Lock_Init(&s_trackerLock);
-    return HashMap_Init(&s_protocolSocketTracker, 
-                        1, 
-                        _ProtocolSocketTrackerTestHash, 
-                        _ProtocolSocketTrackerTestEqual, 
-                        _ProtocolSocketTrackerTestRelease);
 }

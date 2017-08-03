@@ -707,7 +707,6 @@ void VerifySocketConn_Print(
         {"tag", FT_UINT32, offsetof(Self, base.tag)},
         {"operationId", FT_UINT64, offsetof(Self, base.operationId)},
         {"type", FT_UINT32, offsetof(Self, type)},
-        {"sock", FT_SINT32, offsetof(Self, sock)},
         {"message", FT_STRING, offsetof(Self, message)},
         {NULL, 0, 0},
     };

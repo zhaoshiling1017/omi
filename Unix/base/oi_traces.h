@@ -352,8 +352,6 @@ OI_EVENT("Invalid engine credentials")
 void trace_InvalidEngineCredentials();
 OI_EVENT("Engine credentials have not been received")
 void trace_EngineCredentialsNotReceived();
-OI_EVENT("Tracker hash map error");
-void trace_TrackerHashMapError();
 OI_EVENT("Client credentials not yet verified. Msg type = %d");
 void trace_ClientCredentialsNotVerified(int type);
 OI_EVENT("Client credentials not yet received. Msg type = %d");
@@ -819,9 +817,6 @@ void trace_NtlmEnvIgnored(const char * ntlm_user_file);
 
 OI_EVENT("SSL Compression was disabled in the OMI configuration, but the version of SSL used by OMI does not support it.")
 void trace_Http_SslCompressionNotPresent();
-
-OI_EVENT("Tracker hash map item already exists (%p, %d)")
-void trace_TrackerHashMapAlreadyExists(void* handle, int socket);
 
 OI_EVENT("Selector_AddHandler: selector=%p, handler=%p, name=%T ALREADY REGISTERED")
 void trace_Selector_AddHandler_AlreadyThere(Selector * selector, Handler * handler, const TChar * name);
@@ -1702,18 +1697,12 @@ OI_EVENT("Engine establishing socket with server (%p, %d)")
 void trace_EngineEstablishingSocket(void* handle, int socket);
 OI_EVENT("Server connection info received")
 void trace_ServerInfoReceived();
-OI_EVENT("Tracker hash map added (%p, %d)")
-void trace_TrackerHashMapAdd(void* handle, int socket);
-OI_EVENT("Tracker hash map removeded (%d)")
-void trace_TrackerHashMapRemove(int socket);
-OI_EVENT("Tracker hash map found (%p, %d)")
-void trace_TrackerHashMapFind(void* handle, int socket);
 OI_EVENT("Engine: Client Credentials Verified (%p)")
 void trace_ClientCredentialsVerfied(void* handle);
 OI_EVENT("Client: Client Credentials Verified")
 void trace_ClientCredentialsVerfied2();
-OI_EVENT("Handle:(%p), ClientAuthState = %d, EngineAuthState = %d")
-void trace_AuthStates(void* handle, int client, int engine);
+OI_EVENT("%c: Handle:(%p), ClientAuthState = %d, EngineAuthState = %d")
+void trace_AuthStates(char c, void* handle, int client, int engine);
 OI_EVENT("Asking Server to PAM authenticate")
 void trace_AskServerToAuthenticate();
 

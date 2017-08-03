@@ -291,7 +291,8 @@ MI_Result StartOmiserver()
     argv[11] = "1800";
 
     argv[12] = "--loglevel";
-    argv[13] = Log_GetLevelString(Log_GetLevel());
+//    argv[13] = Log_GetLevelString(Log_GetLevel());
+    argv[13] = "DEBUG";
     argv[14] = NULL;
 
     if (Process_StartChild(&serverProcess, path, (char**)argv) != 0)

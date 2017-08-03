@@ -1152,7 +1152,8 @@ typedef enum _BinProtNotificationType
 {
     BinNotificationConnectRequest = 0,
     BinNotificationConnectResponse = 1,
-    BinNotificationAgentIdle = 2
+    BinNotificationAgentIdle = 2,
+    BinNotificationConnectInProgress = 3
 }
 BinProtNotificationType;
 
@@ -1186,6 +1187,7 @@ typedef struct _BinProtocolNotification
 
     /* if in nonroot mode, keeps track of which socket to send message back*/
     int             forwardSock;
+    MI_Uint64       forwardHandle;
 }
 BinProtocolNotification;
 
@@ -1691,7 +1693,6 @@ typedef struct _VerifySocketConn
 {
     Message         base;
     MI_Uint32       type;
-    int             sock;
     MI_ConstString  message;
 }
 VerifySocketConn;

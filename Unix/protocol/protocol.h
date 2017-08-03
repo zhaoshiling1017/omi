@@ -94,9 +94,6 @@ typedef struct _ProtocolSocket
     size_t              receivedCurrentBlockBytes;
     int                 receivingPageIndex;     /* 0 for header otherwise 1-N page index */
 
-    /* holds allocation of protocol socket to server */
-    Batch *             engineBatch;
-
     /* send/recv buffers */
     Header              recv_buffer;
     Header              send_buffer;
@@ -207,8 +204,6 @@ int AskServerToAuthenticate(
     const char *passwd,
     MI_Uint64 handler,
     MI_Result (*callback)(PamCheckUserResp*));
-
-MI_Result Initialize_ProtocolSocketTracker();
 
 END_EXTERNC
 

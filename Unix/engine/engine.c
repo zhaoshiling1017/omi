@@ -81,12 +81,6 @@ int enginemain(int argc, const char* argv[])
             err(ZT("Failed to initialize binary protocol for socket"));
         }
 
-        result = Initialize_ProtocolSocketTracker();
-        if (result != MI_RESULT_OK)
-        {
-            err(ZT("Failed to initialize binary protocol tracker for engine"));
-        }
-
         r = SendSocketFileRequest(&s_data.protocol1->protocolSocket);
         if (r == MI_FALSE)
         {

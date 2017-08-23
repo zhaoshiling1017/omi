@@ -17,6 +17,12 @@ static const char* arg0 = 0;
 
 static Lock s_disp_mutex = LOCK_INITIALIZER;
 
+static void _UpdateCache()
+{
+    printf("Updating cache...\n");
+    return;
+}
+
 void PrintProviderMsg(_In_ Message* msg)
 {
 #if !defined(CONFIG_FAVORSIZE)
@@ -1223,10 +1229,13 @@ MI_Result RunProtocol()
 
     MI_Result r = MI_RESULT_OK;
     const PAL_Uint64 ONE_SECOND_USEC = 1000 * 1000;
+    const PAL_Uint64 REFRESH_INTERVAL = 60 * ONE_SECOND_USEC;
     PAL_Uint64 start;
     PAL_Uint64 finish;
+    PAL_Uint64 lastRefresh;
 
     PAL_Time(&start);
+    lastRefresh = start;
 
     if (s_optsPtr->livetime)
         finish = start + (s_optsPtr->livetime * ONE_SECOND_USEC);
@@ -1294,6 +1303,12 @@ MI_Result RunProtocol()
 
         if (finish && now > finish)
             break;
+
+        if ((serverType == OMI_SERVER) && (now - lastRefresh) > REFRESH_INTERVAL)
+        {
+            _UpdateCache();
+            lastRefresh = now;
+        }
     }
 
     trace_Server_ProtocolRun(r);
